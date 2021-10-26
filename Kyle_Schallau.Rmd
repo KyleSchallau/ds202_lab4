@@ -1,0 +1,151 @@
+---
+title: "DS202_lab4"
+author: "Kyle Schallau"
+date: "10/22/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading the data
+```{r}
+library(dplyr)
+library(tidyverse)
+
+library(readxl)
+defense <- read_excel('../DS202_lab4/cyclonesFootball2020.xlsx', sheet='Defensive')
+offense <- read_excel('../DS202_lab4/cyclonesFootball2020.xlsx', sheet='Offensive')
+biography <- read_excel('../DS202_lab4/cyclonesFootball2020.xlsx', sheet='Biography')
+```
+# Joining and Tidying ISU Football Data
+
+
+# Part one: Cleaning data
+Although the three Excel sheets are loaded into R, they are not useful before some cleaning. Manipulate the three imported data frames:
+
+1. The player names and opponent names should be factors.
+```{r}
+defense$Name <- as.factor(defense$Name)
+defense$Opponent_Opponent <- as.factor(defense$Opponent_Opponent)
+str(defense)
+
+offense$Name <- as.factor(offense$Name)
+offense$Opponent_Opponent <- as.factor(offense$Opponent_Opponent)
+str(offense)
+
+biography$Name <- as.factor(biography$Name)
+str(biography)
+```
+
+2. All offensive and defensive statistics should be numerical. The Weight column in biography should also be numeric. (Optional: Read ?across and learn to mutate multiple columns simultaneously using the across function in dplyr)
+```{r}
+offClean <- offense %>%
+  mutate(across(Receiving_REC:Passing_INT, as.numeric))
+str(offClean)
+
+defClean <- defense %>%
+  mutate(across(Tackles_Solo:Pass_PB, as.numeric))
+str(defClean)
+
+bioClean <- biography %>% 
+  mutate(across(Weight, as.numeric))
+str(bioClean)
+```
+
+3. The Height column in biography should be numeric. (Hint: Use a unit that works well)
+```{r}
+bioClean <- bioClean %>%
+  separate(Height, c('Feet','Height_Inches'), sep = '-', convert = TRUE, remove = FALSE) %>%
+  mutate(Height_Inches = 12*Feet + Height_Inches)
+bioClean <- subset(bioClean, select = -c(Height, Feet) )
+str(bioClean)
+```
+
+4. Add a column to both defense and offense indicating whether it is the first or the second game versus an opponent. We had a single game versus each opponent except for Oklahoma, which we played against twice. (Hint: You can use group_by(), mutate(), and row_number())
+```{r}
+offClean <- offClean %>%
+  group_by(Name, Opponent_Opponent) %>%
+  mutate(Game = row_number())
+
+offClean %>%
+  select(Name, Opponent_Opponent, Game)
+
+defClean <- defClean %>%
+  group_by(Name, Opponent_Opponent) %>%
+  mutate(Game = row_number())
+
+defClean %>%
+  select(Name, Opponent_Opponent, Game)
+```
+
+# Part two: Tidying and exploring
+For the following questions, work on the cleaned data frames defClean, offClean, and bioClean.
+
+1. Reformat the offClean data frame into a tidy format using pivot_longer. The type of statistic (Receiving_REC for the number of receivings, Receiving_YDS for receiving yards, etc) is added as a new key column named stat.
+```{r}
+offClean <- offClean %>% 
+  pivot_longer(Receiving_REC:Passing_INT, names_to = 'Stat',  values_to = 'Total')
+offClean
+```
+
+2. Obtain the player-level offensive statistics. Namely, for each player and each type of statistics, obtain the sum of the statistics in all games.
+```{r}
+offClean <- drop_na(offClean)
+
+offClean %>%
+  group_by(Name, Stat) %>%
+  summarize(sum(Total))
+```
+
+3. Show the distributions of the player-level offensive statistics. The distribution of each offensive statistic should be shown in a separate facet. Explain the patterns you see.
+
+Based on the below graphs, 0 was the highest in each category.  There was a large number of the players who achieved little to none of the below stats. As the stat number increased, the number of players who achieved higher in that stat went down significantly. There are a few players that have very large stats. 
+```{r}
+ggplot(offClean, aes(x = Total)) + geom_histogram(bins = 20) + facet_wrap(~ Stat, scales = 'free') + ggtitle("ISU Offensive Stats")
+```
+
+4. Did ISU have better offense against Oregon or Oklahoma? Answer this question by creating a scatterplot with the x- and y-axes being the receiving yards of the ISU players against each of these two opponents. 
+
+Based on the below graph, ISU had better offense against Oklahoma. There are more points that fall along the right side of the graph. 
+```{r}
+offClean1 <- offClean %>% 
+  filter(Stat == "Receiving_YDS" & (Opponent_Opponent == "Oregon" | Opponent_Opponent == "Oklahoma")) %>% 
+  pivot_wider(names_from = 'Opponent_Opponent', values_from = "Total", values_fn = mean)
+  
+ggplot(offClean1, aes(x = Oklahoma, y = Oregon)) + geom_point() + ggtitle("Offensive Receiving Yards against Oklahoma and Oregon") + xlim(0,85) + ylim(0,85)
+```
+
+Now turn our attention to the player biography.
+
+4 Separate the Hometown column into two columns, namely, the city and the state where the player comes from. Print the first few rows of these two columns. (Hint: look at the sep= argument of separate)
+```{r}
+bioClean <- bioClean %>%
+  separate(Hometown, c('City', 'State'), sep=', ')
+head(bioClean[6:7], 10)
+```
+
+5. How many players are there from each state?
+```{r}
+bioClean$State <- as.factor(bioClean$State)
+summary(bioClean$State)
+
+ggplot(bioClean, aes(x=State)) + geom_bar() + ggtitle("Players from each State") + theme(axis.text.x = element_text(angle = 90, size = 10))
+```
+
+6. How does the performance of quarterback Brock Purdy relate to the performance of the ISU team? Comment on both the defense and offense.
+
+Based on the below defense performance histograms, Brock Purdy has little to no defensive stats. The only stat it looks like he achieved was a couple of solo tackles. I didn't even know Brock Purdy played defense. His stats must be low as a result of not playing on the defense that much. 
+
+Based on the below offense performance histograms, Brock Purdy is very good at offense. He has some impressive stats in some categories. For one, he has had a few games where he passed for around 300 yards, which is good. There are also a few games in which he has around three passing TDs each game. Purdy is also pretty good on his feet. He has picked up around 50 yards rushing for a few games. Overall, Purdy does way better on the offense than the defense compared to other players and he is the best at passing than any other player.
+
+```{r}
+defClean <- defClean %>% 
+  pivot_longer(Tackles_Solo:Pass_PB, names_to = 'Stat',  values_to = 'Total')
+defClean
+
+ggplot(defClean, aes(x = Total, fill = (Name == "Purdy, Brock"))) + geom_histogram(bins = 10) + facet_wrap(~ Stat, scales = 'free') + ggtitle("ISU Defense Performance with Brock Purdy")
+
+ggplot(offClean, aes(x = Total, fill = (Name == "Purdy, Brock"))) + geom_histogram(bins = 15) + facet_wrap(~ Stat, scales = 'free') + ggtitle("ISU Offense Performance with Brock Purdy")
+```
